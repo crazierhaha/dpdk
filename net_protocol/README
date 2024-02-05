@@ -1,0 +1,7 @@
+代码说明：
+    1. 采用如图所示的架构实现一个简单的网络协议栈，并对外提供接口
+    2. 接口名采用 "kr_" + 原网络接口名，如 `kr_socket`
+    3. 架构说明：
+        a. main 线程采用一个 while (1) 处理以太网卡的收发包，并处理 arp request 的定时器
+        b. main 通过 ringBuffer in / ringBuffer out 与上层的网络协议层交互数据包
+        c. 网络层部分使用一个线程单独处理，通过 b 中的 ringBuffer 与 eth 交互数据包
