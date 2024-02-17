@@ -2,6 +2,7 @@
 
 #include <rte_malloc.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 const char *arp_type[2] = {"Static", "Dynamic"};
 
@@ -82,7 +83,7 @@ struct rte_mbuf *arp_pkt_creator(struct rte_mempool *tx_mbuf_pool, uint16_t opco
 	// 创建并处理mbuf
 	struct rte_mbuf *arp_mbuf = rte_pktmbuf_alloc(tx_mbuf_pool);
 	if (arp_mbuf == NULL) {
-		rte_exit(EXIT_FAILURE, "Error: arp_pkt_creator::rte_pktmbuf_alloc\n");
+		rte_exit(EXIT_FAILURE, "[%s]Error: rte_pktmbuf_alloc\n", __func__);
 	}
 
 	uint32_t pkt_length = sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
@@ -126,7 +127,7 @@ void arp_show(void) {
 	printf("[ARP table]%d items.\n", get_arp_table()->count);
 	addr.s_addr = get_arp_table()->localIp;
 	rte_ether_format_addr(macfmt, RTE_ETHER_ADDR_FMT_SIZE, &get_arp_table()->localMac);
-	printf("[ARP table]local: ip:%s --- mac:%s\n", inet_ntoa(addr), macfmt);   
+	printf("[ARP table]local: ip:%s --- mac:%s\n", inet_ntoa(addr), macfmt);
 	while (iter && !g_exit_flag) {
 		addr.s_addr = iter->ip;
 		rte_ether_format_addr(macfmt, RTE_ETHER_ADDR_FMT_SIZE, &iter->mac);
@@ -174,7 +175,7 @@ void arp_request_timer_cb(__attribute__((unused)) struct rte_timer *tim, void *a
 void kr_arp_procedure(struct rte_mbuf *in_mbuf, struct rte_mempool *tx_mbuf_pool) {
 	// 0. arp header
 	struct rte_arp_hdr *arp_hdr = rte_pktmbuf_mtod_offset(in_mbuf, struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
-	
+
 	// 1. 过滤非本机arp报文
 	if (arp_hdr->arp_data.arp_tip != get_arp_table()->localIp) {
 		return;
@@ -191,17 +192,36 @@ void kr_arp_procedure(struct rte_mbuf *in_mbuf, struct rte_mempool *tx_mbuf_pool
 		arp_add_entry(sip, sha, 1);
 	} else if (rte_cpu_to_be_16(RTE_ARP_OP_REQUEST) == arp_hdr->arp_opcode) {
 		struct inout_ring *ringInst = ringInstance();
-	
+
 		// 4. 创建 ARP Reply 包
 		struct rte_mbuf *tx_arp_mbuf = NULL;
-		
+
 		tx_arp_mbuf = arp_pkt_creator(tx_mbuf_pool, RTE_ARP_OP_REPLY,
 				&get_arp_table()->localMac, &arp_hdr->arp_data.arp_tha, get_arp_table()->localIp, arp_hdr->arp_data.arp_tip);
-		
+
 		// 5. ARP Reply 包入队 ring->out
 		rte_ring_mp_enqueue_burst(ringInst->out, (void **)&tx_arp_mbuf, 1, NULL);
 	}
 }
 
+struct rte_ether_addr *arp_get_local_mac(void) {
+	return &(get_arp_table()->localMac);
+}
+uint32_t arp_get_local_ip(void) {
+	return get_arp_table()->localIp;
+}
 
+struct rte_ether_addr *arp_get_mac_with_ip(uint32_t dip, struct rte_mempool *tx_mbuf_pool) {
+	struct arp_entry *arp = arp_find(dip);
+	if (arp) {
+		return &arp->mac;
+	} else {
+		struct rte_mbuf *tx_arp_mbuf = arp_pkt_creator(tx_mbuf_pool, RTE_ARP_OP_REQUEST, &get_arp_table()->localMac, &g_default_dst_mac, get_arp_table()->localIp, dip);
 
+		struct inout_ring *ringInst = ringInstance();
+		// tx mbuf 入队
+		rte_ring_mp_enqueue_burst(ringInst->out, (void **)&tx_arp_mbuf, 1, NULL);
+		sleep(3);
+		return NULL;
+	}
+}

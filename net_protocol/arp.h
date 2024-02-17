@@ -26,6 +26,7 @@ struct arp_table {
 
 // 创建arp table实例
 void arp_init(uint16_t port_id);
+
 void arp_show(void);
 void arp_add_entry(uint32_t ip, struct rte_ether_addr mac, uint8_t type);
 struct arp_entry *arp_find(uint32_t);
@@ -33,6 +34,10 @@ struct arp_entry *arp_find(uint32_t);
 struct rte_mbuf *arp_pkt_creator(struct rte_mempool *tx_mbuf_pool, uint16_t opcode,
 									   const struct rte_ether_addr * const src_mac, const struct rte_ether_addr * const dst_mac,
 									   uint32_t sip, uint32_t dip);
+
+struct rte_ether_addr *arp_get_mac_with_ip(uint32_t dip, struct rte_mempool *tx_mbuf_pool);
+struct rte_ether_addr *arp_get_local_mac(void);
+uint32_t arp_get_local_ip(void);
 
 // ARP request 定时器发包的回调函数
 void arp_request_timer_cb(__attribute__((unused)) struct rte_timer *tim, void *arg);

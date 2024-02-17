@@ -5,7 +5,7 @@
 APP = kr_net_protocol
 
 # all source are stored in SRCS-y
-SRCS-y := main.c pkt_worker.c arp.c ipv4_worker.c icmp.c
+SRCS-y := main.c pkt_worker.c arp.c ipv4_worker.c icmp.c kr_socket.c kr_tcp.c fd.c
 
 # Build using pkg-config variables if possible
 ifeq ($(shell pkg-config --exists libdpdk && echo 0),0)
@@ -50,6 +50,7 @@ RTE_TARGET ?= $(notdir $(abspath $(dir $(firstword $(wildcard $(RTE_SDK)/*/.conf
 include $(RTE_SDK)/mk/rte.vars.mk
 
 CFLAGS += -O3
+CFLAGS += -DALLOW_EXPERIMENTAL_API
 CFLAGS += $(WERROR_FLAGS)
 
 include $(RTE_SDK)/mk/rte.extapp.mk

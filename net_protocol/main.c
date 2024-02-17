@@ -12,13 +12,13 @@
 #include "common.h"
 #include "arp.h"
 #include "pkt_worker.h"
+#include "kr_socket.h"
 
 // DEBUG
 void print_mac(struct rte_ether_addr *mac) {
 	char macdebug[RTE_ETHER_ADDR_FMT_SIZE] = {0};
 	rte_ether_format_addr(macdebug, RTE_ETHER_ADDR_FMT_SIZE, mac);
 	printf("%s ", macdebug);
-
 }
 
 // 宏定义
@@ -122,6 +122,46 @@ static void kr_port_init(uint16_t port_id, struct rte_mempool *mbuf_pool) {
 	printf("Initializing port %u success.\n", port_id);
 }
 
+// app worker
+static int tcp_app_worker(__attribute__((unused)) void *arg) {
+	// DEBUG
+	{
+		printf("[%s]Start.\n", __func__);
+	}
+	int ret;
+	int fd = kr_socket(0, SOCK_STREAM, 0);
+	if (fd < 0)  {
+		printf("[%s]Error: tcp socket failed.\n", __func__);
+		return -1;
+	}
+
+	struct sockaddr_in server_addr;
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(9999);
+	server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	ret = kr_bind(fd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr));
+	if (ret < 0) {
+		printf("[%s]Error: tcp bind failed.\n", __func__);
+		return -1;
+	}
+
+	kr_listen(fd, 10);
+
+	int connfd = kr_accept(fd, NULL, NULL);
+	printf("[%s]connfd[%d]\n", __func__, connfd);
+	if (connfd < 0) {
+		return -1;
+	}
+
+	sleep(100000);
+	// DEBUG
+	{
+		printf("[%s]End.\n", __func__);
+	}
+
+	return 0;
+}
+
 int main(int argc, char *argv[]) {
 	// 变量定义
 	int ret;
@@ -161,7 +201,7 @@ int main(int argc, char *argv[]) {
 
 	// arp request 定时器初始化
 	rte_timer_subsystem_init();
-	
+
 	struct rte_timer arp_timer;
 	rte_timer_init(&arp_timer);
 
@@ -175,6 +215,11 @@ int main(int argc, char *argv[]) {
 	// TODO: 多个协议处理线程
 	rte_eal_remote_launch(pkt_worker, tx_mbuf_pool, lcore_id);
 
+	// 模拟app处理线程
+	lcore_id = rte_get_next_lcore(lcore_id, 1, 0);
+	// TODO: 用户使用 tcp 接口线程
+	rte_eal_remote_launch(tcp_app_worker, NULL, lcore_id);
+
 	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
 
 	// TODO2: 多个网卡场景。针对每个网卡设置一个收发包线程
@@ -182,7 +227,7 @@ int main(int argc, char *argv[]) {
 		if (g_exit_flag == 1) {
 			break;
 		}
-	
+
 		// rx
 		unsigned nb_recv;
 		struct rte_mbuf *rx_mbuf[TXRX_BURST_SIZE];
@@ -204,8 +249,9 @@ int main(int argc, char *argv[]) {
 		unsigned nb_send;
 		struct rte_mbuf *tx_mbufs[TXRX_BURST_SIZE];
 		// TODO5: 增加多网卡发包场景的多消费者模式
-		nb_send = rte_ring_sc_dequeue_burst(ringInst->out, (void **)tx_mbufs, TXRX_BURST_SIZE, NULL);
+		nb_send = rte_ring_mc_dequeue_burst(ringInst->out, (void **)tx_mbufs, TXRX_BURST_SIZE, NULL);
 		if (nb_send) {
+			print_head(__func__, tx_mbufs[0]);
 			// TODO: 增加统计发包数据
 			uint16_t nb_tx = rte_eth_tx_burst(g_iPort_id, 0, tx_mbufs, nb_send);
 

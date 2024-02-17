@@ -9,7 +9,27 @@
 
 #include "arp.h"
 #include "ipv4_worker.h"
+#include "kr_tcp.h"
+#include "common.h"
 
+#if(0)
+static void tcp_sndring_process(void) {
+	struct inout_ring *ring = ringInstance();
+
+	struct kr_tcp_table *tcp_tbl = get_tcp_table();
+	struct kr_tcp_entry *iter = tcp_tbl->entries;
+	while (iter) {
+		struct rte_mbuf *out_mbufs[TXRX_BURST_SIZE];
+		if (iter->tcp_stream.sndring != NULL) {
+			unsigned nb_out = rte_ring_sc_dequeue_burst(iter->tcp_stream.sndring, (void **)out_mbufs, TXRX_BURST_SIZE, NULL);
+			if (nb_out > 0) {
+				rte_ring_mp_enqueue_burst(ring->out, (void **)out_mbufs, nb_out, NULL);
+			}
+		}
+		iter = iter->next;
+	}
+}
+#endif
 
 // 分发处理各种协议包
 int pkt_worker(void *arg) {
@@ -56,6 +76,8 @@ int pkt_worker(void *arg) {
 
 			rte_pktmbuf_free(in_mbufs[i]);
 		}
+
+		tcp_send(tx_mbuf_pool);
 	}
 
 	return 0;
